@@ -35,6 +35,44 @@ func (s *Service) AppendObservation(
 	return updated, nil
 }
 
+func (s *Service) AppendObservationBatch(
+	id string,
+	input ObservationBatchInput,
+) (domain.FermentationRun, error) {
+	var updated domain.FermentationRun
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		run, ok := snapshot.Runs[id]
+		if !ok {
+			return domain.NewError(domain.CodeRunNotFound, "run was not found")
+		}
+		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		observations := make([]domain.GravityObservation, 0, len(input.Observations))
+		for _, record := range input.Observations {
+			observations = append(observations, domain.GravityObservation{
+				RunID:        run.ID,
+				Sequence:     record.Sequence,
+				Gravity:      record.Gravity,
+				TemperatureC: record.TemperatureC,
+				ObservedAt:   record.ObservedAt.UTC(),
+				Note:         record.Note,
+				ReceivedAt:   s.clock.Now(),
+			})
+		}
+		if err := run.AddObservationBatch(observations); err != nil {
+			return err
+		}
+		snapshot.Runs[id] = run.Clone()
+		updated = run.Clone()
+		return nil
+	})
+	if err != nil {
+		return domain.FermentationRun{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) BeginConditioning(
 	id string,
 	input VersionInput,

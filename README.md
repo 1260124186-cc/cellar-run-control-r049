@@ -90,9 +90,19 @@ Run workflow:
 - `POST /v1/runs/{id}/reserve`
 - `POST /v1/runs/{id}/start`
 - `POST /v1/runs/{id}/observations`
+- `POST /v1/runs/{id}/observations/batch`
 - `POST /v1/runs/{id}/conditioning`
 - `POST /v1/runs/{id}/complete`
 - `POST /v1/runs/{id}/abort`
+
+`POST /v1/runs/{id}/observations/batch` accepts
+`{"observations": [...]}` and appends the records atomically in file order.
+Sequence, time-ordering, gravity, temperature, and the optional
+`X-Expected-Version` constraint are checked across the whole batch; any
+violation rejects every record, so a duplicate import or a retry after a
+partial failure has a deterministic result. A successful batch produces the
+same run state, version, and metrics as appending the same records one by
+one.
 
 Writes accept an optional `X-Expected-Version` header. Errors use a stable
 shape:
@@ -115,6 +125,7 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check observation-batch
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP

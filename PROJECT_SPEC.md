@@ -138,6 +138,7 @@ rules, storage coordination, and resource lifecycle.
 Public entry points are:
 
 - `POST /v1/runs/{id}/observations`
+- `POST /v1/runs/{id}/observations/batch`
 - `POST /v1/runs/{id}/conditioning`
 - `POST /v1/runs/{id}/complete`
 - `GET /v1/runs/{id}`
@@ -146,6 +147,13 @@ The client appends three ordered observations, starts conditioning, completes
 the run, and reads the calculated result. Non-monotonic times, rising gravity,
 out-of-range values, excessive sequences, incomplete data, and repeated
 transitions return stable failures without changing persisted state.
+
+A field file may also be submitted as one batch in file order. Every record is
+validated against the chain built by the preceding records; any gravity,
+temperature, ordering, sequence, or expected-version violation rejects the
+whole batch without partial writes, so duplicate imports and retries after a
+partial failure are deterministic. A successful batch produces the same run
+state, version, and final metrics as appending the same records one by one.
 
 This path crosses HTTP protocol handling, application orchestration, numeric
 domain rules, and snapshot storage.
@@ -210,13 +218,14 @@ task owns systematic tests for validation boundaries, state transitions,
 numeric calculations, stale revisions, storage failures, and concurrent
 reservation attempts.
 
-The current build command is `go build ./...`. Three bounded production checks
+The current build command is `go build ./...`. Four bounded production checks
 start the real HTTP handler, issue real JSON requests, check success and failure
 behavior, and exit without external services:
 
 - `go run ./cmd/fermentctl check formula-approval`
 - `go run ./cmd/fermentctl check vessel-run-lifecycle`
 - `go run ./cmd/fermentctl check observations-completion`
+- `go run ./cmd/fermentctl check observation-batch`
 
 ## Scope Limits
 

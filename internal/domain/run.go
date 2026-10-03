@@ -92,30 +92,45 @@ func (r *FermentationRun) StartFermentation(now time.Time) error {
 }
 
 func (r *FermentationRun) AddObservation(observation GravityObservation) error {
+	return r.AddObservationBatch([]GravityObservation{observation})
+}
+
+// AddObservationBatch appends an ordered group of observations atomically.
+// Each record is validated against the chain built by the preceding records;
+// when any record fails, the run keeps its previous observations and version.
+func (r *FermentationRun) AddObservationBatch(observations []GravityObservation) error {
 	if r.State != RunFermenting || r.StartedAt == nil {
 		return NewError(CodeRunState, "observations require a fermenting run")
 	}
-	if len(r.Observations) >= 500 {
+	if len(observations) == 0 {
+		return NewError(CodeInvalidInput,
+			"observation batch must contain at least one record")
+	}
+	if len(r.Observations)+len(observations) > 500 {
 		return NewError(CodeObservationConflict,
 			"run cannot contain more than 500 observations")
 	}
-	var previous *GravityObservation
-	if len(r.Observations) > 0 {
-		value := r.Observations[len(r.Observations)-1]
-		previous = &value
+	combined := append([]GravityObservation(nil), r.Observations...)
+	for _, observation := range observations {
+		var previous *GravityObservation
+		if len(combined) > 0 {
+			value := combined[len(combined)-1]
+			previous = &value
+		}
+		if err := ValidateObservation(*r.StartedAt, previous, observation, observation.ReceivedAt); err != nil {
+			return err
+		}
+		expected := len(combined) + 1
+		if observation.Sequence != expected {
+			return NewError(CodeObservationConflict,
+				"observation sequence must be contiguous and begin at 1")
+		}
+		observation.RunID = r.ID
+		combined = append(combined, observation)
 	}
-	if err := ValidateObservation(*r.StartedAt, previous, observation, observation.ReceivedAt); err != nil {
-		return err
-	}
-	expected := len(r.Observations) + 1
-	if observation.Sequence != expected {
-		return NewError(CodeObservationConflict,
-			"observation sequence must be contiguous and begin at 1")
-	}
-	observation.RunID = r.ID
-	r.Observations = append(r.Observations, observation)
-	r.UpdatedAt = observation.ReceivedAt.UTC()
-	r.Version++
+	r.Observations = combined
+	r.UpdatedAt = observations[len(observations)-1].ReceivedAt.UTC()
+	r.Version += int64(len(observations))
 	return nil
 }
 
