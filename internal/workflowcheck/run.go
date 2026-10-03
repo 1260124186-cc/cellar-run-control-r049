@@ -22,7 +22,13 @@ func Run(name string) error {
 	if err != nil {
 		return err
 	}
-	app := service.New(store, clock.System{})
+	// The observation batch check pins the clock just before a UTC midnight
+	// so file records can cross the day boundary deterministically.
+	var timeSource clock.Clock = clock.System{}
+	if name == "observations-batch" {
+		timeSource = clock.NewFixed(observationBatchNow)
+	}
+	app := service.New(store, timeSource)
 	server := httptest.NewServer(httpapi.NewHandler(app))
 	defer server.Close()
 	api := newClient(server.URL)
@@ -38,6 +44,10 @@ func Run(name string) error {
 		}
 	case "observations-completion":
 		if err := observationsCompletion(api); err != nil {
+			return err
+		}
+	case "observations-batch":
+		if err := observationsBatch(api); err != nil {
 			return err
 		}
 	default:

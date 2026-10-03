@@ -26,6 +26,10 @@ type observationRequest struct {
 	Note         string    `json:"note"`
 }
 
+type observationBatchRequest struct {
+	Observations []observationRequest `json:"observations"`
+}
+
 func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 	mux.HandleFunc("POST /v1/runs", func(response http.ResponseWriter, request *http.Request) {
 		body, err := decodeJSON[createRunRequest](response, request)
@@ -108,6 +112,36 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 			TemperatureC: body.TemperatureC,
 			ObservedAt:   body.ObservedAt,
 			Note:         body.Note,
+		})
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, run)
+	})
+
+	mux.HandleFunc("POST /v1/runs/{id}/observations/batch", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[observationBatchRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		records := make([]service.ObservationInput, 0, len(body.Observations))
+		for _, item := range body.Observations {
+			records = append(records, service.ObservationInput{
+				Sequence:     item.Sequence,
+				Gravity:      item.Gravity,
+				TemperatureC: item.TemperatureC,
+				ObservedAt:   item.ObservedAt,
+				Note:         item.Note,
+			})
+		}
+		run, err := app.AppendObservationBatch(request.PathValue("id"), service.ObservationBatchInput{
+			ExpectedVersion: expected,
+			Observations:    records,
 		})
 		if err != nil {
 			writeDomainError(response, err)

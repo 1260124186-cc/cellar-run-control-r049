@@ -90,6 +90,7 @@ Run workflow:
 - `POST /v1/runs/{id}/reserve`
 - `POST /v1/runs/{id}/start`
 - `POST /v1/runs/{id}/observations`
+- `POST /v1/runs/{id}/observations/batch`
 - `POST /v1/runs/{id}/conditioning`
 - `POST /v1/runs/{id}/complete`
 - `POST /v1/runs/{id}/abort`
@@ -107,6 +108,35 @@ shape:
 }
 ```
 
+## Observation Batches
+
+`POST /v1/runs/{id}/observations/batch` imports a field file in one request:
+
+```json
+{
+  "observations": [
+    {
+      "sequence": 1,
+      "gravity": 1.05,
+      "temperature_c": 20.0,
+      "observed_at": "2026-10-02T23:59:35Z",
+      "note": "file row 1"
+    }
+  ]
+}
+```
+
+Records apply in file order under the same rules as single appends: sequences
+must continue the run contiguously, observed times must strictly increase
+(normalized to UTC, including across day boundaries), and gravity and
+temperature must stay in range. The batch is all-or-nothing — the first
+record that violates a rule, or a stale `X-Expected-Version`, rejects the
+whole file and persists nothing, so a corrected file can be retried as-is and
+re-importing a committed file fails deterministically. A successful batch
+advances the run version once per record and leaves run details and final
+metrics identical to appending the same records one by one. An empty file is
+rejected with `invalid_input`.
+
 ## Workflow Checks
 
 Run each production workflow check separately:
@@ -115,6 +145,7 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check observations-batch
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP

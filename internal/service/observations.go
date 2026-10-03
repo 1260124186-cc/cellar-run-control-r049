@@ -6,24 +6,46 @@ func (s *Service) AppendObservation(
 	id string,
 	input ObservationInput,
 ) (domain.FermentationRun, error) {
+	return s.AppendObservationBatch(id, ObservationBatchInput{
+		Observations: []ObservationInput{input},
+	})
+}
+
+// AppendObservationBatch applies a file of observations in file order as one
+// atomic write. Every record follows the same domain rules as a single
+// append, so a rejected record discards the whole batch and a committed batch
+// leaves the run exactly as record-by-record writes would.
+func (s *Service) AppendObservationBatch(
+	id string,
+	input ObservationBatchInput,
+) (domain.FermentationRun, error) {
+	if len(input.Observations) == 0 {
+		return domain.FermentationRun{}, domain.FieldError(domain.CodeInvalidInput,
+			"observations", "must contain at least one record")
+	}
 	var updated domain.FermentationRun
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
 		}
-		now := s.clock.Now()
-		observation := domain.GravityObservation{
-			RunID:        run.ID,
-			Sequence:     input.Sequence,
-			Gravity:      input.Gravity,
-			TemperatureC: input.TemperatureC,
-			ObservedAt:   input.ObservedAt.UTC(),
-			Note:         input.Note,
-			ReceivedAt:   now,
-		}
-		if err := run.AddObservation(observation); err != nil {
+		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
 			return err
+		}
+		receivedAt := s.clock.Now()
+		for _, record := range input.Observations {
+			observation := domain.GravityObservation{
+				RunID:        run.ID,
+				Sequence:     record.Sequence,
+				Gravity:      record.Gravity,
+				TemperatureC: record.TemperatureC,
+				ObservedAt:   record.ObservedAt.UTC(),
+				Note:         record.Note,
+				ReceivedAt:   receivedAt,
+			}
+			if err := run.AddObservation(observation); err != nil {
+				return err
+			}
 		}
 		snapshot.Runs[id] = run.Clone()
 		updated = run.Clone()

@@ -97,6 +97,15 @@ time, gravity, temperature, optional note, and receipt time.
 - Gravity must not rise more than 0.010 above the immediately preceding value.
 - Observation sequences are contiguous and start at 1.
 
+A field file can be submitted as one batch. Batch records apply in file
+order under the same rules as single appends, and the batch is
+all-or-nothing: the first record that violates a gravity, temperature,
+sequence, time, or expected-version rule rejects the whole file without
+persisting any record. A committed batch advances the run version once per
+record and leaves run details and final metrics identical to appending the
+same records one by one. Re-importing a committed file fails deterministically
+on the sequence rule, and an empty file is rejected as invalid input.
+
 ## Connected Workflows
 
 ### 1. Formula Approval
@@ -138,6 +147,7 @@ rules, storage coordination, and resource lifecycle.
 Public entry points are:
 
 - `POST /v1/runs/{id}/observations`
+- `POST /v1/runs/{id}/observations/batch`
 - `POST /v1/runs/{id}/conditioning`
 - `POST /v1/runs/{id}/complete`
 - `GET /v1/runs/{id}`
@@ -145,7 +155,9 @@ Public entry points are:
 The client appends three ordered observations, starts conditioning, completes
 the run, and reads the calculated result. Non-monotonic times, rising gravity,
 out-of-range values, excessive sequences, incomplete data, and repeated
-transitions return stable failures without changing persisted state.
+transitions return stable failures without changing persisted state. A batch
+submission applies a whole file atomically: any invalid record or a stale
+expected version rejects every record in the file.
 
 This path crosses HTTP protocol handling, application orchestration, numeric
 domain rules, and snapshot storage.
@@ -210,13 +222,17 @@ task owns systematic tests for validation boundaries, state transitions,
 numeric calculations, stale revisions, storage failures, and concurrent
 reservation attempts.
 
-The current build command is `go build ./...`. Three bounded production checks
+The current build command is `go build ./...`. Four bounded production checks
 start the real HTTP handler, issue real JSON requests, check success and failure
 behavior, and exit without external services:
 
 - `go run ./cmd/fermentctl check formula-approval`
 - `go run ./cmd/fermentctl check vessel-run-lifecycle`
 - `go run ./cmd/fermentctl check observations-completion`
+- `go run ./cmd/fermentctl check observations-batch`
+
+The batch check pins the clock just before a UTC midnight so cross-day file
+records, rejected-file retries, and repeated imports resolve deterministically.
 
 ## Scope Limits
 

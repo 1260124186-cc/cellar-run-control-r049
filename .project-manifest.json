@@ -113,6 +113,26 @@
         "domain",
         "storage"
       ]
+    },
+    {
+      "id": "observations-batch",
+      "name": "Import an observation file as one atomic batch",
+      "entry": "POST /v1/runs/{id}/observations/batch",
+      "steps": [
+        "submit ordered file records in one request",
+        "reject the whole file when any record violates a range, sequence, time, or version rule",
+        "retry a corrected file after a rejected import",
+        "match the version and final metrics of record-by-record writes"
+      ],
+      "success": "returns the run with every record appended and the version advanced per record",
+      "failure": "returns a stable range, sequence, time, state, or revision error without partial writes",
+      "verification": "the check pins the clock at a UTC day boundary, compares batch and single writes, and replays rejected and repeated files",
+      "module_ids": [
+        "httpapi",
+        "service",
+        "domain",
+        "storage"
+      ]
     }
   ]
 }
